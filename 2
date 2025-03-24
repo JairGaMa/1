@@ -1,0 +1,28 @@
+const int ledPin = 13; // Pin del LED
+
+void setup() {
+    pinMode(ledPin, OUTPUT);
+    Serial.begin(9600); // Iniciar comunicación serial con el módulo Bluetooth
+}
+
+void loop() {
+    if (Serial.available()) { // Si hay datos desde el Bluetooth
+        char comando = Serial.read(); // Leer el carácter recibido
+        Serial.println(comando); // Mostrar en el monitor serie
+        
+        if (comando == '1') {
+            digitalWrite(ledPin, HIGH); // Encender LED
+        } 
+        else if (comando == '0') {
+            digitalWrite(ledPin, LOW); // Apagar LED
+        } 
+        else if (comando == 'A' || comando == 'a') {
+            for (int i = 0; i < 5; i++) { // Parpadeo por 5 ciclos
+                digitalWrite(ledPin, HIGH);
+                delay(500); // Encendido por 500 ms
+                digitalWrite(ledPin, LOW);
+                delay(500); // Apagado por 500 ms
+            }
+        }
+    }
+}
