@@ -1,0 +1,141 @@
+#include "ThingSpeak.h"
+#include "WiFi.h"
+#include "DHT.h"
+#include <Adafruit_BMP280.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define pin2 23      // Pin del DHT22
+#define BMP_SDA 21   // Pin SDA del BMP280
+#define BMP_SCL 22   // Pin SCL del BMP280
+#define BUZZER 5     // Pin del buzzer (actualizado a 5)
+#define SCREEN_WIDTH 128  // Ancho de la pantalla OLED
+#define SCREEN_HEIGHT 64  // Alto de la pantalla OLED
+#define OLED_RESET -1     // Pin de reset de la pantalla OLED (o -1 si no se usa)
+#define BUTTON_PIN 12     // Pin del pulsador
+
+const char* ssid = "UAM-ROBOTICA"; 
+const char* password = "m4nt32024uat"; 
+
+unsigned long channelID = 2863305;  
+const char* WriteAPIKey = "MS9MGSIIZSMN1Y67";  
+
+WiFiClient cliente;
+
+DHT dht2(pin2, DHT22);
+Adafruit_BMP280 bmp;
+
+float t2, h2, presion;  // Variables para almacenar datos
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+void setup() {
+    Serial.begin(115200);
+    Serial.println("Inicializando...");
+
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nWiFi conectado!");
+
+    ThingSpeak.begin(cliente);
+    dht2.begin();
+
+    Wire.begin(BMP_SDA, BMP_SCL);
+    if (!bmp.begin(0x76)) {
+        Serial.println("No se pudo encontrar el sensor BMP280");
+        while (1);
+    }
+
+    pinMode(BUZZER, OUTPUT);
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+    if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+        Serial.println(F("SSD1306 allocation failed"));
+        for (;;);
+    }
+    display.clearDisplay();
+    display.display();
+    display.ssd1306_command(SSD1306_DISPLAYOFF);  // Apagar la pantalla al inicio
+}
+
+void loop() {
+    static unsigned long lastUpdate = 0;
+
+    // Enviar datos automáticamente cada 20 segundos
+    if (millis() - lastUpdate >= 20000) {
+        lastUpdate = millis();
+        
+        Serial.println("Leyendo sensores...");
+        leerdht2();  
+
+        // Verificar si debe activarse el buzzer
+        verificarCondiciones();
+
+        // Enviar datos a ThingSpeak
+        ThingSpeak.setField(1, t2);
+        ThingSpeak.setField(2, h2);
+        ThingSpeak.setField(3, presion);
+        ThingSpeak.writeFields(channelID, WriteAPIKey);
+
+        Serial.println("Datos enviados a ThingSpeak!");
+    }
+
+    // Si el botón es presionado, mostrar datos en OLED
+    if (digitalRead(BUTTON_PIN) == LOW) {  
+        Serial.println("Botón presionado, mostrando datos en OLED...");
+
+        display.ssd1306_command(SSD1306_DISPLAYON);  // Encender OLED
+        mostrarDatosEnPantalla();
+
+        delay(5000);  // Mostrar los datos por 5 segundos
+
+        display.clearDisplay();
+        display.display();
+        display.ssd1306_command(SSD1306_DISPLAYOFF);  // Apagar OLED
+    }
+}
+
+void leerdht2() {
+    t2 = dht2.readTemperature();
+    h2 = dht2.readHumidity();
+    presion = bmp.readPressure() / 100.0F;
+
+    while (isnan(t2) || isnan(h2) || isnan(presion)) {
+        Serial.println("Lectura fallida, repitiendo...");
+        delay(2000);
+        t2 = dht2.readTemperature();
+        h2 = dht2.readHumidity();
+        presion = bmp.readPressure() / 100.0F;
+    }
+
+    Serial.print("Temperatura: "); Serial.print(t2); Serial.println(" ºC");
+    Serial.print("Humedad: "); Serial.print(h2); Serial.println(" %");
+    Serial.print("Presión: "); Serial.print(presion); Serial.println(" hPa");
+}
+
+// Función para activar el buzzer si se supera algún umbral
+void verificarCondiciones() {
+    if (t2 > 40 || h2 > 90 || presion > 1030) {
+        Serial.println("¡ALERTA! Parámetros fuera de rango");
+        tone(BUZZER, 1000); // Sonido de alerta en 1000 Hz
+        delay(1000);
+        noTone(BUZZER);
+    }
+}
+
+void mostrarDatosEnPantalla() {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 0);
+    display.print("Temp: "); display.print(t2); display.print(" ºC");
+    display.setCursor(0, 10);
+    display.print("Humedad: "); display.print(h2); display.print(" %");
+    display.setCursor(0, 20);
+    display.print("Presion: "); display.print(presion); display.print(" hPa");
+    display.display();
+}
